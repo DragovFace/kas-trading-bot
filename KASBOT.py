@@ -1,3 +1,4 @@
+```python
 import ccxt
 import time
 import json
@@ -9,7 +10,6 @@ import concurrent.futures
 import queue
 import signal
 import sys
-import yaml
 from functools import wraps
 from threading import Lock
 
@@ -47,9 +47,23 @@ last_price = None
 last_price_time = 0
 price_cache_duration = 5
 
-# Загрузка конфигурации
-with open("config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+# Загрузка конфигурации из переменных окружения
+config = {
+    'exchange': {
+        'api_key': os.getenv('EXCHANGE_API_KEY'),
+        'secret': os.getenv('EXCHANGE_SECRET'),
+    },
+    'telegram': {
+        'token': os.getenv('TELEGRAM_TOKEN'),
+        'chat_id': os.getenv('TELEGRAM_CHAT_ID'),
+    }
+}
+
+# Проверка, что все переменные окружения заданы
+for section, keys in config.items():
+    for key, value in keys.items():
+        if value is None:
+            raise ValueError(f"Переменная окружения {key.upper()} не задана")
 
 # Инициализация клиента MEXC
 exchange = ccxt.mexc({
@@ -254,9 +268,9 @@ def create_new_order(symbol, active_orders, executed_orders_count, total_profit,
     bought_amount = buy_order['amount']
     sell_price = actual_buy_price * (1 + profit_percent)
     save_notification(
-        f"КУПЛЕНО\n{bought_amount:.6f} KAS по {actual_buy_price:.6f} USDT\n"
+        f"[BUY] КУПЛЕНО\n{bought_amount:.6f} KAS по {actual_buy_price:.6f} USDT\n"
         f"Потрачено: {bought_amount * actual_buy_price:.2f} USDT\n"
-        f"ВЫСТАВЛЕНО\n{bought_amount:.6f} KAS по {sell_price:.6f} USDT"
+        f"[SELL] ВЫСТАВЛЕНО\n{bought_amount:.6f} KAS по {sell_price:.6f} USDT"
     )
 
     sell_order = create_sell_order(symbol, bought_amount, sell_price)
@@ -278,7 +292,7 @@ def check_orders(symbol, active_orders, executed_orders_count, total_profit, ini
     global trading_stopped
     logging.debug("[CHECK] Проверка статуса ордеров...")
     if initial_check:
-        save_notification("Проверка статуса ранее созданных ордеров...")
+        save_notification("[CHECK] Проверка статуса ранее созданных ордеров...")
 
     def fetch_order_status(order):
         time.sleep(0.2)
@@ -404,13 +418,13 @@ def run_bot(symbol):
                     if order.get("order_type") == "autobay":
                         order["order_type"] = "bay"
                         save_state(active_orders, executed_orders_count, total_profit)
-                        save_notification(f"Трейдинг остановлен. Ордер {order['id']} переведен в 'bay'.")
+                        save_notification(f"[STOP] Трейдинг остановлен. Ордер {order['id']} переведен в 'bay'.")
                         break
                 else:
-                    save_notification("[Ордеров 'autobay' нет.")
+                    save_notification("[STOP] Ордеров 'autobay' нет.")
                 save_state(active_orders, executed_orders_count, total_profit)
             elif command == "start":
-                logging.info("Трейдинг запущен.")
+                logging.info("[START] Трейдинг запущен.")
                 trading_stopped = False
                 insufficient_funds_notified = False
                 active_orders, executed_orders_count, total_profit = check_orders(
@@ -422,7 +436,7 @@ def run_bot(symbol):
                     symbol, active_orders, executed_orders_count, total_profit, "bay"
                 )
                 save_state(active_orders, executed_orders_count, total_profit)
-                save_notification("[Создан ордер 'bay'.")
+                save_notification("[BUY] Создан ордер 'bay'.")
         except queue.Empty:
             pass
 
@@ -466,7 +480,7 @@ def start_trading(message):
 def send_stats(message):
     active_orders, executed_orders_count, total_profit = load_state()
     stats_message = (
-        f"Статистика:\n"
+        f"[STATS] Статистика:\n"
         f"Выполнено ордеров: {executed_orders_count}\n"
         f"Общая сумма прибыли: {total_profit:.6f} USD\n"
         f"Активных ордеров: {len(active_orders)}\n"
